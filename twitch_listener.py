@@ -32,7 +32,6 @@ def open_terminal_cmd(title, filepath):
         shell=True
     )
 
-
 def open_terminal_powershell(title, filepath):
     return subprocess.Popen([
         "powershell", "-NoExit", "-Command",
@@ -68,6 +67,7 @@ elif terminal_type == "wt":
 # Main Bot Class
 class Bot(commands.Bot):
 
+    # Initializes twitch api and accesses into the channel
     def __init__(self):
         super().__init__(
             token=TWITCH_TOKEN,
@@ -76,7 +76,7 @@ class Bot(commands.Bot):
         )
         self.target_channel = None  # will be set when bot is ready
         
-        
+    # When bot is ready, it will send this message + Enable typing into chat
     async def event_ready(self):
         print(f"✅ Logged in as {self.nick}")
         print(f"📡 Connected to channel: {CHANNEL}")
@@ -85,10 +85,42 @@ class Bot(commands.Bot):
         self.target_channel = self.get_channel(CHANNEL)
         self.loop.create_task(self.listen_to_console())
 
+    # When a message is detected in the channel, it will log it. 
     async def event_message(self, message):
-        content = message.content
-        user = message.author.name
-        is_mod = message.author.is_mod
+        # Fallbacks in case anything is missing
+        content = "<NO CONTENT>"
+        user = "<UNKNOWN>"
+        is_mod = False
+        
+        # Extract message content
+        try:
+            content = message.content if message.content else "<NO CONTENT>"
+        except Exception as e:
+            print(f"\n❌ ERROR: Unable to access message.content")
+            traceback.print_exc()
+            print("\n📤 Type a message to send to Twitch chat:\n>>> ", end='', flush=True)
+
+        
+        # Try to extract author info
+        # Handle missing author — assume it's the bot
+        if message.author is None:
+            user = "SELF_BOT_neelerita_dev"
+            is_mod = True  # Assume bot has mod privileges
+        else:
+            try:
+                if message.author is None:
+                    raise AttributeError("message.author is None")
+                user = message.author.name or "<NO NAME>"
+                is_mod = message.author.is_mod
+            except Exception as e:
+                print(f"\n❌ ERROR: Failed to extract user info.")
+                print(f"Content: {repr(content)}")
+                print(f"Message raw: {repr(message)}")
+                traceback.print_exc()
+                print("\n📤 Type a message to send to Twitch chat:\n>>> ", end='', flush=True)
+
+        
+        
 
         # Log all messages
         try:
@@ -114,7 +146,7 @@ class Bot(commands.Bot):
                 traceback.print_exc()
                 print("\n📤 Type a message to send to Twitch chat:\n>>> ", end='', flush=True)
 
-    
+    # In the background it keeps connection ready to send a message in chat
     async def listen_to_console(self):
         await asyncio.sleep(2)  # slight delay to avoid race condition
 
