@@ -1,0 +1,135 @@
+import os
+import subprocess
+from dotenv import load_dotenv
+from twitchio.ext import commands
+import asyncio
+import traceback
+
+# Load env vars
+load_dotenv()
+TWITCH_TOKEN = os.getenv("TWITCH_ACCESS_PREFIX_TOKEN")
+CHANNEL = os.getenv("TWITCH_CHANNEL_TO_ACCESS").lower()
+
+
+def ensure_log_file(log_type: str, terminal_type: str, channel: str) -> str:
+    filename = f"{log_type}_{terminal_type}_{channel}.log"
+    open(filename, "a").close()  # Create if it doesn't exist
+    return filename
+
+# Start extra terminals
+def open_terminal(title, command):
+    # On Linux/Gnome. Change this if using Mac/Windows
+    subprocess.Popen([
+        "gnome-terminal",
+        "--title", title,
+        "--",
+        "bash", "-c", command
+    ])
+
+def open_terminal_cmd(title, filepath):
+    return subprocess.Popen(
+        f'start "{title}" cmd /k powershell -Command "Get-Content -Path \'{filepath}\' -Wait"',
+        shell=True
+    )
+
+
+def open_terminal_powershell(title, filepath):
+    return subprocess.Popen([
+        "powershell", "-NoExit", "-Command",
+        f"$host.UI.RawUI.WindowTitle = '{title}'; Get-Content -Path '{filepath}' -Wait"
+    ])
+
+def open_terminal_windows_terminal(title, filepath):
+    return subprocess.Popen([
+        "wt", f'-w 0 nt --title "{title}" powershell -NoExit -Command "Get-Content -Path \'{filepath}\' -Wait"'
+    ])
+
+
+# --- Setup for CMD terminals example ---
+terminal_type = "cmd"  # or "powershell" / "wt"
+
+# --- Create files ---
+chat_log = ensure_log_file("chat", terminal_type, CHANNEL)
+filtered_log = ensure_log_file("filtered", terminal_type, CHANNEL)
+
+# --- Open terminals and keep handles ---
+if terminal_type == "cmd":
+    chat_proc = open_terminal_cmd("Twitch Chat - All", chat_log)
+    filtered_proc = open_terminal_cmd("Filtered Chat", filtered_log)
+
+elif terminal_type == "powershell":
+    chat_proc = open_terminal_powershell("Twitch Chat - All", chat_log)
+    filtered_proc = open_terminal_powershell("Filtered Chat", filtered_log)
+
+elif terminal_type == "wt":
+    chat_proc = open_terminal_windows_terminal("Twitch Chat - All", chat_log)
+    filtered_proc = open_terminal_windows_terminal("Filtered Chat", filtered_log)
+
+# Main Bot Class
+class Bot(commands.Bot):
+
+    def __init__(self):
+        super().__init__(
+            token=TWITCH_TOKEN,
+            prefix="!",
+            initial_channels=[CHANNEL]
+        )
+        self.target_channel = None  # will be set when bot is ready
+        
+        
+    async def event_ready(self):
+        print(f"✅ Logged in as {self.nick}")
+        print(f"📡 Connected to channel: {CHANNEL}")
+        
+        # To be able to type in chat
+        self.target_channel = self.get_channel(CHANNEL)
+        self.loop.create_task(self.listen_to_console())
+
+    async def event_message(self, message):
+        content = message.content
+        user = message.author.name
+        is_mod = message.author.is_mod
+
+        # Log all messages
+        try:
+            with open(chat_log, "a", encoding="utf-8") as f:
+                f.write(f"[{user}] {content}\n")
+        except Exception as e:
+            print(f"\n❌ ERROR CHAT MESSAGE: [{user}] {repr(content)}")
+            traceback.print_exc()
+            print("\n📤 Type a message to send to Twitch chat:\n>>> ", end='', flush=True)
+
+
+        # Check for filtered messages
+        if (
+            "om" in content.lower()
+            or user.lower() in {"lalabriar", "neelerita"}
+            or is_mod
+        ):
+            try:
+                with open(filtered_log, "a", encoding="utf-8") as f:
+                    f.write(f"[{user}] {content}\n")
+            except Exception as e:
+                print(f"\n❌ ERROR FILTERED CHAT MESSAGE: [{user}] {repr(content)}")
+                traceback.print_exc()
+                print("\n📤 Type a message to send to Twitch chat:\n>>> ", end='', flush=True)
+
+    
+    async def listen_to_console(self):
+        await asyncio.sleep(2)  # slight delay to avoid race condition
+
+        while True:
+            try:
+                msg = await asyncio.to_thread(input, "\n📤 Type a message to send to Twitch chat: ")
+                if msg.strip() and self.target_channel:
+                    await self.target_channel.send(msg.strip())
+                    print("✅ Sent to chat.")
+            except Exception as e:
+                print(f"\n❌ Error sending message:\n{e}")
+                print("\n📤 Type a message to send to Twitch chat:\n>>> ", end='', flush=True)
+
+# Run bot
+if __name__ == "__main__":
+    print("🟢 Starting Twitch Chat Bot...")
+    bot = Bot()
+    bot.run()
