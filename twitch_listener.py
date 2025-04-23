@@ -5,64 +5,80 @@ from twitchio.ext import commands
 import asyncio
 import traceback
 
-# Load env vars
+
+# === CONFIGURATION ===
 load_dotenv()
 TWITCH_TOKEN = os.getenv("TWITCH_ACCESS_PREFIX_TOKEN")
 CHANNEL = os.getenv("TWITCH_CHANNEL_TO_ACCESS").lower()
+RESET_LOGS_ON_START = True
+IGNORE_FILTER_FOR_USERS = {"streamelements", "fossabot", "streamlabs", "moobot", "nightbot"}
+
+# === TERMINAL SETUP ===
+terminal_type = "cmd"  # or "powershell" / "wt"
 
 
-def ensure_log_file(log_type: str, terminal_type: str, channel: str) -> str:
-    filename = f"{log_type}_{terminal_type}_{channel}.log"
-    open(filename, "a").close()  # Create if it doesn't exist
-    return filename
+# === LOGGING FILES ===
+def get_log_filename(log_type: str, terminal_type: str, channel: str) -> str:
+    return f"{log_type}_{terminal_type}_{channel}.log"
 
-# Start extra terminals
-def open_terminal(title, command):
-    # On Linux/Gnome. Change this if using Mac/Windows
-    subprocess.Popen([
-        "gnome-terminal",
-        "--title", title,
-        "--",
-        "bash", "-c", command
-    ])
+# === Create files ===
+chat_log = get_log_filename("chat", terminal_type, CHANNEL)
+filtered_log = get_log_filename("filtered", terminal_type, CHANNEL)
 
+if RESET_LOGS_ON_START:
+    open(chat_log, "w").close()
+    open(filtered_log, "w").close()
+    
+
+# === TERMINAL LAUNCHERS ===
 def open_terminal_cmd(title, filepath):
+# Check if a window with the same title is already open
+# Use PowerShell to check for existing windows with the title
+    try:
+        check_cmd = [
+            "powershell",
+            "-Command",
+            f"Get-Process cmd | Where-Object {{$_.MainWindowTitle -like '*{title}*'}}"
+        ]
+        existing = subprocess.run(check_cmd, capture_output=True, text=True)
+        if title.lower() in existing.stdout.lower():
+            print(f"⚠️ Terminal '{title}' already open. Skipping new launch.")
+            if RESET_LOGS_ON_START:
+                open(filepath, "w").close()
+            return None
+    except Exception as e:
+        print(f"❌ Error checking terminal title: {e}")
+
+    # Launch the actual terminal
     return subprocess.Popen(
-        f'start "{title}" cmd /k powershell -Command "Get-Content -Path \'{filepath}\' -Wait"',
+        f'start "{title}" cmd /k powershell -Command "Clear-Host; Get-Content -Path \\"{filepath}\\" -Wait"',
         shell=True
     )
 
-def open_terminal_powershell(title, filepath):
-    return subprocess.Popen([
-        "powershell", "-NoExit", "-Command",
-        f"$host.UI.RawUI.WindowTitle = '{title}'; Get-Content -Path '{filepath}' -Wait"
-    ])
+# def open_terminal_powershell(title, filepath):
+#     return subprocess.Popen([
+#         "powershell", "-NoExit", "-Command",
+#         f"$host.UI.RawUI.WindowTitle = '{title}'; Get-Content -Path '{filepath}' -Wait"
+#     ])
 
-def open_terminal_windows_terminal(title, filepath):
-    return subprocess.Popen([
-        "wt", f'-w 0 nt --title "{title}" powershell -NoExit -Command "Get-Content -Path \'{filepath}\' -Wait"'
-    ])
+# def open_terminal_windows_terminal(title, filepath):
+#     return subprocess.Popen([
+#         "wt", f'-w 0 nt --title "{title}" powershell -NoExit -Command "Get-Content -Path \'{filepath}\' -Wait"'
+#     ])
 
-
-# --- Setup for CMD terminals example ---
-terminal_type = "cmd"  # or "powershell" / "wt"
-
-# --- Create files ---
-chat_log = ensure_log_file("chat", terminal_type, CHANNEL)
-filtered_log = ensure_log_file("filtered", terminal_type, CHANNEL)
 
 # --- Open terminals and keep handles ---
 if terminal_type == "cmd":
-    chat_proc = open_terminal_cmd("Twitch Chat - All", chat_log)
-    filtered_proc = open_terminal_cmd("Filtered Chat", filtered_log)
+    chat_proc = open_terminal_cmd(f'Twitch Chat - {CHANNEL} - All', chat_log)
+    filtered_proc = open_terminal_cmd(f'Filtered Chat {CHANNEL}', filtered_log)
 
-elif terminal_type == "powershell":
-    chat_proc = open_terminal_powershell("Twitch Chat - All", chat_log)
-    filtered_proc = open_terminal_powershell("Filtered Chat", filtered_log)
+# elif terminal_type == "powershell":
+#     chat_proc = open_terminal_powershell("Twitch Chat - All", chat_log)
+#     filtered_proc = open_terminal_powershell("Filtered Chat", filtered_log)
 
-elif terminal_type == "wt":
-    chat_proc = open_terminal_windows_terminal("Twitch Chat - All", chat_log)
-    filtered_proc = open_terminal_windows_terminal("Filtered Chat", filtered_log)
+# elif terminal_type == "wt":
+#     chat_proc = open_terminal_windows_terminal("Twitch Chat - All", chat_log)
+#     filtered_proc = open_terminal_windows_terminal("Filtered Chat", filtered_log)
 
 # Main Bot Class
 class Bot(commands.Bot):
@@ -125,7 +141,11 @@ class Bot(commands.Bot):
         # Log all messages
         try:
             with open(chat_log, "a", encoding="utf-8") as f:
-                f.write(f"[{user}] {content}\n")
+                    if is_mod: 
+                        m = "[MOD] "
+                    else: 
+                        m = ""
+                    f.write(f"{m}[{user}] {content}\n")
         except Exception as e:
             print(f"\n❌ ERROR CHAT MESSAGE: [{user}] {repr(content)}")
             traceback.print_exc()
@@ -134,13 +154,20 @@ class Bot(commands.Bot):
 
         # Check for filtered messages
         if (
-            "om" in content.lower()
-            or user.lower() in {"lalabriar", "neelerita"}
-            or is_mod
+            (user.lower() not in IGNORE_FILTER_FOR_USERS) and 
+            (
+                " om " in content.lower()
+                or (user.lower() in {"lalabriar", "neelerita"})
+                or (is_mod)
+            )
         ):
             try:
                 with open(filtered_log, "a", encoding="utf-8") as f:
-                    f.write(f"[{user}] {content}\n")
+                    if is_mod: 
+                        m = "[MOD] "
+                    else: 
+                        m = ""
+                    f.write(f"{m}[{user}] {content}\n")
             except Exception as e:
                 print(f"\n❌ ERROR FILTERED CHAT MESSAGE: [{user}] {repr(content)}")
                 traceback.print_exc()
