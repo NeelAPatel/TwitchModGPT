@@ -1,3 +1,5 @@
 .env
 Notes.txt
+# chat*.log
+# filtered*.log
 *.log
