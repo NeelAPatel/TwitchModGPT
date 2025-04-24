@@ -1,13 +1,16 @@
 import subprocess
 from datetime import datetime
 import os
-from string_format_wrap import swrap, pwrap, swrap_test
 import re
+from string_format_wrap import swrap, pwrap, swrap_test
 
 # Cached message history and a default system-level instruction prompt.
 history = []
 localllm_prompt_log = "localllm_prompt_log.log"
 localllm_conversation_log = "localllm_conversation_log.log"
+
+# Visibility toggle for <think> tags
+show_think_tags = False
 
 # Define the default system prompt only once
 default_system_prompt = (
@@ -29,10 +32,8 @@ if os.path.exists(localllm_prompt_log):
         loaded_prompt = f.read().strip()
         system_prompt = loaded_prompt if loaded_prompt else default_system_prompt
 else:
-    # with open(localllm_prompt_log, "r", encoding="utf-8") as f:
-    #     f.write(default_system_prompt)
     system_prompt = default_system_prompt
-    with open(localllm_prompt_log, "r", encoding="utf-8") as f:
+    with open(localllm_prompt_log, "w", encoding="utf-8") as f:
         f.write(default_system_prompt)
 
 
@@ -43,10 +44,7 @@ def log_conversation_to_file(entry: str):
 
 
 def build_prompt():
-    """
-    Builds a full prompt for the model by combining the system prompt
-    with the running chat history. Also stores the system prompt.
-    """
+    """Builds full prompt and logs system prompt."""
     with open(localllm_prompt_log, "w", encoding="utf-8") as f:
         f.write(system_prompt)
 
@@ -59,14 +57,10 @@ def build_prompt():
 
 
 def run_ollama_chat(model: str):
-    """
-    Handles the main conversation loop with the local LLM via Ollama.
-    Supports commands prefixed with ! and normal message prompting.
-    """
-    global system_prompt
+    global system_prompt, show_think_tags
 
     print(f"\n🧠 Starting chat with model: {model}")
-    print("Type '!switch <model>' to change models, '!model' to show current, '!list' to list models, '!prompt' to update prompt, or 'exit' to quit.\n")
+    print("Type '!switch <model>', '!model', '!list', '!prompt', '!showthink', '!hidethink', '!history', or 'exit'.\n")
 
     log_conversation_to_file(f"System prompt set: \n{system_prompt}")
     log_conversation_to_file(f"Model: {model}\n---")
@@ -74,10 +68,25 @@ def run_ollama_chat(model: str):
     while True:
         user_input = input(swrap("y", ">>> ")).strip()
 
-        # Commands that should not be processed by the LLM
         if user_input.lower() in {"exit", "quit"}:
             log_conversation_to_file("Session ended.")
             break
+
+        elif user_input == "!showthink":
+            show_think_tags = True
+            print("🧠 <think> content will now be shown.\n")
+            continue
+
+        elif user_input == "!hidethink":
+            show_think_tags = False
+            print("🙈 <think> content will now be hidden.\n")
+            continue
+
+        elif user_input == "!history":
+            for entry in history:
+                role = entry["role"].capitalize()
+                print(f"### {role}: {entry['content']}")
+            continue
 
         elif user_input.startswith("!replaceprompt"):
             system_prompt = input("Enter new system prompt: ").strip()
@@ -86,22 +95,19 @@ def run_ollama_chat(model: str):
             with open(localllm_prompt_log, "w", encoding="utf-8") as f:
                 f.write(system_prompt)
             continue
-        
+
         elif user_input.startswith("!appendprompt"):
-            print("Append a new System prompt , the current prompt is given below for reference. Anything entered here will be appended to this prompt.")
-            print("Current System Prompt: ")
+            print("Append a new System prompt. Current prompt below:")
             print(swrap("i", system_prompt))
-            
             appended_system_prompt = input("\nAppend to existing prompt: ").strip()
             system_prompt += f'\n{appended_system_prompt}'
-            
             print("✅ System prompt updated.\n")
             log_conversation_to_file(f"System prompt updated: {system_prompt}\n---")
             with open(localllm_prompt_log, "w", encoding="utf-8") as f:
                 f.write(system_prompt)
             continue
-        
-        elif user_input.startswith("!prompt"): 
+
+        elif user_input.startswith("!prompt"):
             print(swrap("i", system_prompt))
             continue
 
@@ -127,7 +133,6 @@ def run_ollama_chat(model: str):
                 print(f"❌ Failed to list models: {e}\n")
             continue
 
-        # Append the user's message to the chat history
         history.append({"role": "user", "content": user_input})
         log_conversation_to_file(f"User: {user_input}")
         full_prompt = build_prompt()
@@ -142,13 +147,10 @@ def run_ollama_chat(model: str):
         history.append({"role": "assistant", "content": output})
         log_conversation_to_file(f"Assistant: {output}\n---")
 
-        # print("\n" + output + "\n")
-        # Strip <think>...</think> blocks for terminal display only
-        import re
-        clean_output = re.sub(r"<think>.*?</think>", "", output, flags=re.DOTALL).strip()
-        pwrap("b", "\n" + clean_output + "\n")
+        if not show_think_tags:
+            output = re.sub(r"<think>.*?</think>", "", output, flags=re.DOTALL).strip()
 
-
+        pwrap("b", "\n" + output + "\n")
 
 
 def main():

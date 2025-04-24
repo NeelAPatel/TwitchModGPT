@@ -4,34 +4,24 @@ from dotenv import load_dotenv
 from twitchio.ext import commands
 import asyncio
 import traceback
-from string_format_wrap import swrap, pwrap, swrap_test
-import re
-import aiohttp
+
 
 # === CONFIGURATION ===
 load_dotenv()
 TWITCH_TOKEN = os.getenv("TWITCH_ACCESS_PREFIX_TOKEN")
-TWITCH_ACCESS_TOKEN = os.getenv("TWITCH_ACCESS_TOKEN")
-TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
 CHANNEL = os.getenv("TWITCH_CHANNEL_TO_ACCESS").lower()
 RESET_LOGS_ON_START = True
 IGNORE_FILTER_FOR_USERS = {"streamelements", "fossabot", "streamlabs", "moobot", "nightbot"}
-
-# === LOCAL LLM CONFIG ===
-# LLM_MODEL = "deepseek-r1:7b"
-LLM_MODEL = "mistral:latest"
-LLM_PROMPT_FILE = "modgpt_prompt_log.log"
-LLM_FILTERS_FILE = "modgpt_filters_log.log"
 
 # === TERMINAL SETUP ===
 terminal_type = "cmd"  # or "powershell" / "wt"
 
 
-# === CHAT LOGGING FILES ===
+# === LOGGING FILES ===
 def get_log_filename(log_type: str, terminal_type: str, channel: str) -> str:
     return f"{log_type}_{terminal_type}_{channel}.log"
 
-# === Create Chat files ===
+# === Create files ===
 chat_log = get_log_filename("chat", terminal_type, CHANNEL)
 filtered_log = get_log_filename("filtered", terminal_type, CHANNEL)
 
@@ -76,6 +66,7 @@ def open_terminal_cmd(title, filepath):
 #         "wt", f'-w 0 nt --title "{title}" powershell -NoExit -Command "Get-Content -Path \'{filepath}\' -Wait"'
 #     ])
 
+
 # --- Open terminals and keep handles ---
 if terminal_type == "cmd":
     chat_proc = open_terminal_cmd(f'Twitch Chat - {CHANNEL} - All', chat_log)
@@ -89,62 +80,6 @@ if terminal_type == "cmd":
 #     chat_proc = open_terminal_windows_terminal("Twitch Chat - All", chat_log)
 #     filtered_proc = open_terminal_windows_terminal("Filtered Chat", filtered_log)
 
-
-# === Twitch stream info functions: 
-async def get_user_id(session, channel_login):
-    url = f"https://api.twitch.tv/helix/users?login={channel_login}"
-    headers = {
-        "Client-ID": TWITCH_CLIENT_ID,
-        "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}"
-    }
-    async with session.get(url, headers=headers) as resp:
-        data = await resp.json()
-        return data['data'][0]['id'] if data['data'] else None
-    
-    
-async def fetch_stream_info(channel_login: str):
-    async with aiohttp.ClientSession() as session:
-        user_id = await get_user_id(session, channel_login)
-        if not user_id:
-            return "Unknown", "Unknown"
-
-        url = f"https://api.twitch.tv/helix/streams?user_id={user_id}"
-        headers = {
-            "Client-ID": TWITCH_CLIENT_ID,
-            "Authorization": f"Bearer {TWITCH_ACCESS_TOKEN}"
-        }
-        async with session.get(url, headers=headers) as resp:
-            data = await resp.json()
-            if data["data"]:
-                stream = data["data"][0]
-                return stream["title"], stream["game_name"]
-            return "Offline", "N/A"
-
-
-
-# === LLM FUNCTIONS ===
-def load_system_prompt():
-    if os.path.exists(LLM_PROMPT_FILE):
-        with open(LLM_PROMPT_FILE, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    return ""
-
-
-
-def query_llm(message: str, title, category) -> str:
-    prompt = load_system_prompt()
-    prompt += f"\n Streamer: {CHANNEL} \n Stream Category: {category} \n Stream Title: {title}"
-    full_input = f"System: {prompt}\nUser: {message}\nAssistant:"
-    try:
-        result = subprocess.run(["ollama", "run", LLM_MODEL], input=full_input.encode(), stdout=subprocess.PIPE)
-        output = result.stdout.decode().strip()
-        cleaned = re.sub(r"<think>.*?</think>", "", output, flags=re.DOTALL).strip()
-        return cleaned
-    except Exception as e:
-        return f"[LLM Error: {e}]"
-
-
-
 # Main Bot Class
 class Bot(commands.Bot):
 
@@ -156,9 +91,6 @@ class Bot(commands.Bot):
             initial_channels=[CHANNEL]
         )
         self.target_channel = None  # will be set when bot is ready
-        self.title = None
-        self.category = None
-        
         
     # When bot is ready, it will send this message + Enable typing into chat
     async def event_ready(self):
@@ -168,8 +100,6 @@ class Bot(commands.Bot):
         # To be able to type in chat
         self.target_channel = self.get_channel(CHANNEL)
         self.loop.create_task(self.listen_to_console())
-        self.title, self.category = await fetch_stream_info(CHANNEL)
-        print(f"📺 {CHANNEL} is playing {self.category} with title set as '{self.title}'")
 
     # When a message is detected in the channel, it will log it. 
     async def event_message(self, message):
@@ -205,6 +135,9 @@ class Bot(commands.Bot):
                 traceback.print_exc()
                 print("\n📤 Type a message to send to Twitch chat:\n>>> ", end='', flush=True)
 
+        
+        
+
         # Log all messages
         try:
             with open(chat_log, "a", encoding="utf-8") as f:
@@ -217,6 +150,7 @@ class Bot(commands.Bot):
             print(f"\n❌ ERROR CHAT MESSAGE: [{user}] {repr(content)}")
             traceback.print_exc()
             print("\n📤 Type a message to send to Twitch chat:\n>>> ", end='', flush=True)
+
 
         # Check for filtered messages
         if (
@@ -239,14 +173,6 @@ class Bot(commands.Bot):
                 traceback.print_exc()
                 print("\n📤 Type a message to send to Twitch chat:\n>>> ", end='', flush=True)
 
-
-        # === LLM Inference For All Messages===
-        msg = f'[{user}] {content}'
-        ai_response = query_llm(msg, self.title, self.category)
-        print(f"🤖 LLM Flagged a message: {swrap("italic", msg)}\n Response: \n {swrap("b", ai_response)}\n")
-
-        
-        
     # In the background it keeps connection ready to send a message in chat
     async def listen_to_console(self):
         await asyncio.sleep(2)  # slight delay to avoid race condition
@@ -265,5 +191,4 @@ class Bot(commands.Bot):
 if __name__ == "__main__":
     print("🟢 Starting Twitch Chat Bot...")
     bot = Bot()
-    
     bot.run()

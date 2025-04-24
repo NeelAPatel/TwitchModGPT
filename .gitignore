@@ -3,3 +3,5 @@ Notes.txt
 # chat*.log
 # filtered*.log
 *.log
+!localllm_prompt_log.log
+.vscode
