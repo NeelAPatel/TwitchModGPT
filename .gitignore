@@ -5,3 +5,4 @@ Notes.txt
 *.log
 !localllm_prompt_log.log
 .vscode
+__pycache__
