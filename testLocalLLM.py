@@ -1,6 +1,8 @@
 import subprocess
 from datetime import datetime
 import os
+from string_format_wrap import swrap, pwrap, swrap_test
+import re
 
 # Cached message history and a default system-level instruction prompt.
 history = []
@@ -70,7 +72,7 @@ def run_ollama_chat(model: str):
     log_conversation_to_file(f"Model: {model}\n---")
 
     while True:
-        user_input = input(">>> ").strip()
+        user_input = input(swrap("y", ">>> ")).strip()
 
         # Commands that should not be processed by the LLM
         if user_input.lower() in {"exit", "quit"}:
@@ -88,7 +90,7 @@ def run_ollama_chat(model: str):
         elif user_input.startswith("!appendprompt"):
             print("Append a new System prompt , the current prompt is given below for reference. Anything entered here will be appended to this prompt.")
             print("Current System Prompt: ")
-            print(system_prompt)
+            print(swrap("i", system_prompt))
             
             appended_system_prompt = input("\nAppend to existing prompt: ").strip()
             system_prompt += f'\n{appended_system_prompt}'
@@ -100,7 +102,7 @@ def run_ollama_chat(model: str):
             continue
         
         elif user_input.startswith("!prompt"): 
-            print(system_prompt)
+            print(swrap("i", system_prompt))
             continue
 
         elif user_input.startswith("!model"):
@@ -140,7 +142,13 @@ def run_ollama_chat(model: str):
         history.append({"role": "assistant", "content": output})
         log_conversation_to_file(f"Assistant: {output}\n---")
 
-        print("\n" + output + "\n")
+        # print("\n" + output + "\n")
+        # Strip <think>...</think> blocks for terminal display only
+        import re
+        clean_output = re.sub(r"<think>.*?</think>", "", output, flags=re.DOTALL).strip()
+        pwrap("b", "\n" + clean_output + "\n")
+
+
 
 
 def main():
