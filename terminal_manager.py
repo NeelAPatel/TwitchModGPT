@@ -1,9 +1,18 @@
 import subprocess
-
 import config
+import os
+
+LOG_PATH = "logs/"
 
 def get_log_filename(log_type: str, terminal_type: str, channel: str) -> str:
-    return f"{log_type}_{terminal_type}_{channel}.log"
+    os.makedirs(LOG_PATH, exist_ok=True)  # Ensure logs/ directory exists
+    filename = f"{LOG_PATH}{log_type}_{terminal_type}_{channel}.log"
+    if not os.path.exists(filename):
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write("")  # Create empty log file
+    
+    return filename
+
 
 def open_terminal_cmd(title, filepath):
 # Check if a window with the same title is already open

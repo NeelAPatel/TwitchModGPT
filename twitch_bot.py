@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 from string_format_wrap import swrap, pwrap, swrap_test
-from terminal_manager import get_log_filename, print_to_log
+from terminal_manager import get_log_filename, open_terminal_cmd, print_to_log
 from twitchio.ext import commands
 import aiohttp
 import asyncio
@@ -12,6 +12,27 @@ import traceback
 from LocalLLM import query_llm, load_system_prompt
 
 
+# ==== EMOTE FETCHER ======
+def get_all_channel_emotes():
+    url = config.EMOTES_ALL_API_URL
+    response = requests.get(url)
+
+    if response.status_code == 200:
+        emote_data = response.json()
+        emote_names = [emote["code"] for emote in emote_data]
+        return sorted(emote_names)
+    else:
+        print(f"Failed to fetch emotes: {response.status_code}")
+        return []
+
+def emote_regexify(): 
+    emotes = get_all_channel_emotes()
+    escaped = [re.escape(emote) for emote in emotes if emote]  # protect special chars
+    emote_pattern = re.compile(r'\b(?:' + '|'.join(escaped) + r')\b', re.IGNORECASE)
+    
+    return emote_pattern
+    
+
 # ==== TOKEN REFRESHER ================
 import requests
 
@@ -19,13 +40,15 @@ import requests
 ENV_FILE = ".env"
 
 def refresh_access_token():
-    from dotenv import load_dotenv
-    load_dotenv()
+    # from dotenv import load_dotenv
+    # load_dotenv()
 
+    # Fetch current variables
     client_id = os.getenv("TWITCH_CLIENT_ID")
     client_secret = os.getenv("TWITCH_CLIENT_SECRET")
     refresh_token = os.getenv("TWITCH_REFRESH_TOKEN")
 
+    # Formulate parameters for refresh request
     url = "https://id.twitch.tv/oauth2/token"
     params = {
         "grant_type": "refresh_token",
@@ -34,10 +57,12 @@ def refresh_access_token():
         "client_secret": client_secret,
     }
 
+    # Perform POST request for token
     resp = requests.post(url, params=params)
     if resp.status_code != 200:
         raise Exception(f"Failed to refresh token: {resp.text}")
     
+    # Update .env file 
     data = resp.json()
     new_access_token = data["access_token"]
     new_refresh_token = data.get("refresh_token", refresh_token)
@@ -128,13 +153,23 @@ class TwitchBot(commands.Bot):
             prefix="!",
             initial_channels=[config.CHANNEL]
         )
+        
+        # Get stream info
         self.target_channel = None  # will be set when bot is ready
         self.title = None
         self.category = None
         
+        # set up logging and tailing        
         self.chat_logfile_name = get_log_filename ("chat", "cmd", config.CHANNEL)
         self.filtered_logfile_name = get_log_filename("filtered", "cmd", config.CHANNEL)
+        if config.RESET_LOGS_ON_START:
+            open(self.chat_logfile_name, "w").close()
+            open(self.filtered_logfile_name, "w").close()
         
+        open_terminal_cmd("Chat", self.chat_logfile_name)
+        open_terminal_cmd("Chat", self.filtered_logfile_name)
+        
+        self.emote_pattern = emote_regexify()
         
     # When bot is ready, it will send this message + Enable typing into chat
     async def event_ready(self):
@@ -154,6 +189,10 @@ class TwitchBot(commands.Bot):
         user = "<UNKNOWN>"
         is_mod = False
         
+        # Remove emotes from chat message
+        content = self.emote_pattern.sub("", content).strip()
+        if content == "": 
+            content = "<NO CONTENT>"
         # Extract message content
         try:
             content = message.content if message.content else "<NO CONTENT>"
