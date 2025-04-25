@@ -64,7 +64,11 @@ def update_current_prompt_save(text):
     
 
 def append_to_prompt(append_text): 
+    global current_prompt
     current_prompt += f'\n{append_text}'
+    with open (config.LLM_PROMPT_FILE, "a", encoding="utf-8") as f: 
+            f.write(append_text)
+    
     
     
 # def append_new_filter():
@@ -74,9 +78,9 @@ def append_to_prompt(append_text):
     
 
 
-def query_llm(message: str, title, category) -> str:
+def query_llm(message: str) -> str:
     prompt = load_system_prompt()
-    prompt += f"\n Streamer: {config.CHANNEL} \n Stream Category: {category} \n Stream Title: {title}"
+    # prompt += f"\n Streamer: {config.CHANNEL} \n Stream Category: {category} \n Stream Title: {title}"
     full_input = f"System: {prompt}\nUser: {message}\nAssistant:"
     try:
         result = subprocess.run(["ollama", "run", config.LLM_MODEL], input=full_input.encode(), stdout=subprocess.PIPE)

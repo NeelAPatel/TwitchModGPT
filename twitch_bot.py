@@ -10,6 +10,7 @@ import re
 import subprocess
 import traceback
 from LocalLLM import query_llm, load_system_prompt
+import LocalLLM as locllm
 
 
 # ==== EMOTE FETCHER ======
@@ -180,7 +181,19 @@ class TwitchBot(commands.Bot):
         self.target_channel = self.get_channel(config.CHANNEL)
         self.loop.create_task(self.listen_to_console())
         self.title, self.category = await fetch_stream_info(config.CHANNEL)
-        print(f"📺 {config.CHANNEL} is playing {self.category} with title set as '{self.title}'")
+        
+        channel_info_str = f"{config.CHANNEL} is playing {self.category} with title set as '{self.title}'"
+        print(f"📺 {channel_info_str}'")
+        
+        
+        locllm.append_to_prompt(f"\n ## Streamer's Context for reference.\n "+channel_info_str+ 
+                                "\nIf Streamer's Title contains @ followed by some name/word, that means a collab with that streamer, so you are responsible for moderating anything against them too."
+                                "\nIf Streamer's Title contains any hashtags, especially those such as #ad #sponsor etc, pay special attention to chat saying anything against the sponsored content, characters, IP etc.")
+        
+        user_query = "Based on the prompt, tell me exactly what your end goal is as a moderation bot. especially given context of the stream information provided."
+        ai_response = locllm.query_llm(user_query)
+        print(swrap("y", f"👤User Query:  {user_query}") + "\n" + swrap("b", f"🤖 LLM: {ai_response}\n\n"))
+        
 
     # When a message is detected in the channel, it will log it. 
     async def event_message(self, message):
@@ -250,7 +263,7 @@ class TwitchBot(commands.Bot):
 
         # === LLM Inference For All Messages===
         msg = f'[{user}] {content}'
-        ai_response = query_llm(msg, self.title, self.category)
+        ai_response = query_llm(msg)
         print(f"🤖 LLM Flagged a message: {swrap("italic", msg)}\n Response: \n {swrap("b", ai_response)}\n")
 
         
