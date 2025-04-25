@@ -1,20 +1,11 @@
-import os
-import subprocess
 from dotenv import load_dotenv
-from twitchio.ext import commands
-import asyncio
-import traceback
-from twitch_bot import TwitchBot
 from string_format_wrap import swrap, pwrap, swrap_test
-import re
-import aiohttp
-import config
 from terminal_manager import get_log_filename
-import os
-import traceback
 from twitch_bot import TwitchBot, refresh_access_token
 from twitchio.errors import AuthenticationError
+import os
 import sys
+import traceback
 
 # ========= ENV CONFIGURATION =============
 # # === FROM ENV ===
@@ -50,6 +41,7 @@ import sys
 if __name__ == "__main__":
     print("🟢 Starting Twitch Chat Bot...")
 
+    # Try to run the bot. If fails --> Refresh token and try again
     try:
         bot = TwitchBot()
         bot.run()
@@ -59,6 +51,7 @@ if __name__ == "__main__":
             refresh_access_token()
             print("🔁 Token refreshed. Restarting bot using os.execv()...")
             os.execv(sys.executable, [sys.executable] + sys.argv)
+            
         except Exception as e:
             print(f"❌ Token refresh failed: {e}")
             traceback.print_exc()
