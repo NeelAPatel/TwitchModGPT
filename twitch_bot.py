@@ -12,6 +12,66 @@ import traceback
 from LocalLLM import query_llm, load_system_prompt
 
 
+# ==== TOKEN REFRESHER ================
+import requests
+
+# === Token Refresh Logic ===
+ENV_FILE = ".env"
+
+def refresh_access_token():
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    client_id = os.getenv("TWITCH_CLIENT_ID")
+    client_secret = os.getenv("TWITCH_CLIENT_SECRET")
+    refresh_token = os.getenv("TWITCH_REFRESH_TOKEN")
+
+    url = "https://id.twitch.tv/oauth2/token"
+    params = {
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id": client_id,
+        "client_secret": client_secret,
+    }
+
+    resp = requests.post(url, params=params)
+    if resp.status_code != 200:
+        raise Exception(f"Failed to refresh token: {resp.text}")
+    
+    data = resp.json()
+    new_access_token = data["access_token"]
+    new_refresh_token = data.get("refresh_token", refresh_token)
+    new_prefix_token = f"oauth:{new_access_token}"
+
+    update_env_var("TWITCH_ACCESS_TOKEN", new_access_token)
+    update_env_var("TWITCH_ACCESS_PREFIX_TOKEN", new_prefix_token)
+    update_env_var("TWITCH_REFRESH_TOKEN", new_refresh_token)
+
+    # Update config in-memory too
+    config.TWITCH_ACCESS_TOKEN = new_access_token
+    config.TWITCH_TOKEN = new_prefix_token
+
+    print("🔁 Twitch token refreshed and .env updated.")
+    return new_access_token, new_prefix_token
+
+def update_env_var(key, value):
+    updated = False
+    lines = []
+    with open(ENV_FILE, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.startswith(f"{key}="):
+                lines.append(f"{key}={value}\n")
+                updated = True
+            else:
+                lines.append(line)
+    if not updated:
+        lines.append(f"{key}={value}\n")
+    with open(ENV_FILE, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+        
+        
+        
+
 
 # ==== STREAM INFO HELPER FUNCTIONS ========
 async def get_user_id(session, channel_login):
@@ -26,7 +86,15 @@ async def get_user_id(session, channel_login):
     
 async def fetch_stream_info(channel_login: str):
     async with aiohttp.ClientSession() as session:
-        user_id = await get_user_id(session, channel_login)
+        try:
+            user_id = await get_user_id(session, channel_login)
+        except Exception as e:
+            if "401" in str(e):
+                print("🔒 Token expired. Attempting to refresh...")
+                refresh_access_token()
+                return await fetch_stream_info(channel_login)
+            raise
+        
         if not user_id:
             return "Unknown", "Unknown"
 
@@ -37,6 +105,11 @@ async def fetch_stream_info(channel_login: str):
         }
         async with session.get(url, headers=headers) as resp:
             data = await resp.json()
+            if resp.status == 401:
+                print("🔒 Token expired during stream fetch. Refreshing...")
+                refresh_access_token()
+                return await fetch_stream_info(channel_login)
+
             if data["data"]:
                 stream = data["data"][0]
                 return stream["title"], stream["game_name"]

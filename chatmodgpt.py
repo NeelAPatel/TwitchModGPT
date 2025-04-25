@@ -10,7 +10,11 @@ import re
 import aiohttp
 import config
 from terminal_manager import get_log_filename
-
+import os
+import traceback
+from twitch_bot import TwitchBot, refresh_access_token
+from twitchio.errors import AuthenticationError
+import sys
 
 # ========= ENV CONFIGURATION =============
 # # === FROM ENV ===
@@ -45,5 +49,19 @@ from terminal_manager import get_log_filename
 
 if __name__ == "__main__":
     print("🟢 Starting Twitch Chat Bot...")
-    bot = TwitchBot()
-    bot.run()
+
+    try:
+        bot = TwitchBot()
+        bot.run()
+    except AuthenticationError:
+        print("🔒 Authentication failed. Attempting token refresh...")
+        try:
+            refresh_access_token()
+            print("🔁 Token refreshed. Restarting bot using os.execv()...")
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        except Exception as e:
+            print(f"❌ Token refresh failed: {e}")
+            traceback.print_exc()
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        traceback.print_exc()
