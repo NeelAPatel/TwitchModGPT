@@ -9,137 +9,69 @@ import os
 import re
 import subprocess
 import traceback
-from LocalLLM import query_llm, load_system_prompt
+# from LocalLLM import query_llm, load_base_prompt
 import LocalLLM as locllm
+import sys
 
+from testStreamInfoFetch import fetch_stream_info
 
-# ==== EMOTE FETCHER ======
-def get_all_channel_emotes():
-    url = config.EMOTES_ALL_API_URL
-    response = requests.get(url)
-
-    if response.status_code == 200:
-        emote_data = response.json()
-        emote_names = [emote["code"] for emote in emote_data]
-        return sorted(emote_names)
-    else:
-        print(f"Failed to fetch emotes: {response.status_code}")
-        return []
-
-def emote_regexify(): 
-    emotes = get_all_channel_emotes()
-    escaped = [re.escape(emote) for emote in emotes if emote]  # protect special chars
-    emote_pattern = re.compile(r'\b(?:' + '|'.join(escaped) + r')\b', re.IGNORECASE)
-    
-    return emote_pattern
-    
 
 # ==== TOKEN REFRESHER ================
 import requests
 
-# === Token Refresh Logic ===
-ENV_FILE = ".env"
 
-def refresh_access_token():
-    # from dotenv import load_dotenv
-    # load_dotenv()
-
-    # Fetch current variables
-    client_id = os.getenv("TWITCH_CLIENT_ID")
-    client_secret = os.getenv("TWITCH_CLIENT_SECRET")
-    refresh_token = os.getenv("TWITCH_REFRESH_TOKEN")
-
-    # Formulate parameters for refresh request
-    url = "https://id.twitch.tv/oauth2/token"
-    params = {
-        "grant_type": "refresh_token",
-        "refresh_token": refresh_token,
-        "client_id": client_id,
-        "client_secret": client_secret,
-    }
-
-    # Perform POST request for token
-    resp = requests.post(url, params=params)
-    if resp.status_code != 200:
-        raise Exception(f"Failed to refresh token: {resp.text}")
-    
-    # Update .env file 
-    data = resp.json()
-    new_access_token = data["access_token"]
-    new_refresh_token = data.get("refresh_token", refresh_token)
-    new_prefix_token = f"oauth:{new_access_token}"
-
-    update_env_var("TWITCH_ACCESS_TOKEN", new_access_token)
-    update_env_var("TWITCH_ACCESS_PREFIX_TOKEN", new_prefix_token)
-    update_env_var("TWITCH_REFRESH_TOKEN", new_refresh_token)
-
-    # Update config in-memory too
-    config.TWITCH_ACCESS_TOKEN = new_access_token
-    config.TWITCH_TOKEN = new_prefix_token
-
-    print("🔁 Twitch token refreshed and .env updated.")
-    return new_access_token, new_prefix_token
-
-def update_env_var(key, value):
-    updated = False
-    lines = []
-    with open(ENV_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            if line.startswith(f"{key}="):
-                lines.append(f"{key}={value}\n")
-                updated = True
-            else:
-                lines.append(line)
-    if not updated:
-        lines.append(f"{key}={value}\n")
-    with open(ENV_FILE, "w", encoding="utf-8") as f:
-        f.writelines(lines)
-        
-        
         
 
 
-# ==== STREAM INFO HELPER FUNCTIONS ========
-async def get_user_id(session, channel_login):
-    url = f"https://api.twitch.tv/helix/users?login={channel_login}"
-    headers = {
-        "Client-ID": config.TWITCH_CLIENT_ID,
-        "Authorization": f"Bearer {config.TWITCH_ACCESS_TOKEN}"
-    }
-    async with session.get(url, headers=headers) as resp:
-        data = await resp.json()
-        return data['data'][0]['id'] if data['data'] else None
-    
-async def fetch_stream_info(channel_login: str):
-    async with aiohttp.ClientSession() as session:
-        try:
-            user_id = await get_user_id(session, channel_login)
-        except Exception as e:
-            if "401" in str(e):
-                print("🔒 Token expired. Attempting to refresh...")
-                refresh_access_token()
-                return await fetch_stream_info(channel_login)
-            raise
+# # ==== STREAM INFO HELPER FUNCTIONS ========
+# async def get_user_id(session, channel_login):
+#     url = f"https://api.twitch.tv/helix/users?login={channel_login}"
+#     headers = {
+#         "Client-ID": config.TWITCH_CLIENT_ID,
+#         "Authorization": f"Bearer {config.TWITCH_ACCESS_TOKEN}"
+#     }
+#     async with session.get(url, headers=headers) as resp:
+#         if resp.status != 200:
+#             print(f"❌ Failed to fetch user_id. Status: {resp.status}")
+#             error_text = await resp.text()
+#             print(f"Response Text: {error_text}")
+#             sys.exit(1)
         
-        if not user_id:
-            return "Unknown", "Unknown"
+#         data = await resp.json()
+#         if not data.get('data'):
+#             print(f"❌ No user found with login '{channel_login}'. Double-check the channel name.")
+#             sys.exit(1)
+        
+#         return data['data'][0]['id']
 
-        url = f"https://api.twitch.tv/helix/streams?user_id={user_id}"
-        headers = {
-            "Client-ID": config.TWITCH_CLIENT_ID,
-            "Authorization": f"Bearer {config.TWITCH_ACCESS_TOKEN}"
-        }
-        async with session.get(url, headers=headers) as resp:
-            data = await resp.json()
-            if resp.status == 401:
-                print("🔒 Token expired during stream fetch. Refreshing...")
-                refresh_access_token()
-                return await fetch_stream_info(channel_login)
+# async def fetch_stream_info(channel_login: str):
+#     async with aiohttp.ClientSession() as session:
+#         try:
+#             user_id = await get_user_id(session, channel_login)
+#         except Exception as e:
+#             print(f"❌ Critical error while fetching user ID: {e}")
+#             sys.exit(1)
 
-            if data["data"]:
-                stream = data["data"][0]
-                return stream["title"], stream["game_name"]
-            return "Offline", "N/A"
+#         url = f"https://api.twitch.tv/helix/streams?user_id={user_id}"
+#         headers = {
+#             "Client-ID": config.TWITCH_CLIENT_ID,
+#             "Authorization": f"Bearer {config.TWITCH_ACCESS_TOKEN}"
+#         }
+#         async with session.get(url, headers=headers) as resp:
+#             if resp.status != 200:
+#                 print(f"❌ Failed to fetch stream info. Status: {resp.status}")
+#                 error_text = await resp.text()
+#                 print(f"Response Text: {error_text}")
+#                 sys.exit(1)
+
+#             data = await resp.json()
+
+#             if not data.get("data"):
+#                 print(f"⚠️ Streamer '{channel_login}' is currently OFFLINE.")
+#                 return "Offline", "N/A"
+            
+#             stream = data["data"][0]
+#             return stream["title"], stream["game_name"]
 
 # async def refresh_token()
 
@@ -167,33 +99,49 @@ class TwitchBot(commands.Bot):
             open(self.chat_logfile_name, "w").close()
             open(self.filtered_logfile_name, "w").close()
         
-        open_terminal_cmd("Chat", self.chat_logfile_name)
-        open_terminal_cmd("Chat", self.filtered_logfile_name)
-        
-        self.emote_pattern = emote_regexify()
+        self.emote_pattern = ""
         
     # When bot is ready, it will send this message + Enable typing into chat
     async def event_ready(self):
         print(f"✅ Logged in as {self.nick}")
         print(f"📡 Connected to channel: {config.CHANNEL}")
+        channel_info_str = f"{config.CHANNEL} is playing {self.category} with title set as '{self.title}'"
+        print(f"📺 {channel_info_str}'")
+        
+        # Open Terminals
+        open_terminal_cmd("Chat", self.chat_logfile_name)
+        open_terminal_cmd("Chat", self.filtered_logfile_name)
+        
+        # Set Emote pattern for messages
+        # self.emote_pattern = emote_regexify()
         
         # To be able to type in chat
         self.target_channel = self.get_channel(config.CHANNEL)
         self.loop.create_task(self.listen_to_console())
+        
+        # Fetch Stream context
         self.title, self.category = await fetch_stream_info(config.CHANNEL)
         
-        channel_info_str = f"{config.CHANNEL} is playing {self.category} with title set as '{self.title}'"
-        print(f"📺 {channel_info_str}'")
+        # Set up LLM
+        locllm.load_base_prompt()
+        locllm.update_prompt_stream_context(config.CHANNEL, self.title, self.category)
         
         
-        locllm.append_to_prompt(f"\n ## Streamer's Context for reference.\n "+channel_info_str+ 
-                                "\nIf Streamer's Title contains @ followed by some name/word, that means a collab with that streamer, so you are responsible for moderating anything against them too."
-                                "\nIf Streamer's Title contains any hashtags, especially those such as #ad #sponsor etc, pay special attention to chat saying anything against the sponsored content, characters, IP etc.")
         
-        user_query = "Based on the prompt, tell me exactly what your end goal is as a moderation bot. especially given context of the stream information provided."
+        # channel_info_str = f"{config.CHANNEL} is playing {self.category} with title set as '{self.title}'"
+        # print(f"📺 {channel_info_str}'")
+        
+        
+        # locllm.append_to_prompt(f"\n ## Streamer's Context for reference. Use this to determine additional context of a chat message as they could be referring to gameplay, content, collaboration people, sponsors, however by default people talk to other chatters and the streamer or reacting to what they see on screen.\n "+channel_info_str+ 
+        #                         "\nIf Streamer's Title contains @ followed by some name/word, that means a collab with that streamer, so you are responsible for moderating anything against them too."
+        #                         "\nIf Streamer's Title contains any hashtags, especially those such as #ad #sponsor etc, pay special attention to chat saying anything against the sponsored content, characters, IP etc.")
+        
+        user_query = "Based on the prompt, tell me exactly what is your goal as a moderation assistant. Be brief but informative."
         ai_response = locllm.query_llm(user_query)
         print(swrap("y", f"👤User Query:  {user_query}") + "\n" + swrap("b", f"🤖 LLM: {ai_response}\n\n"))
         
+        
+        print(f"\n\n {locllm.get_full_prompt()}")
 
     # When a message is detected in the channel, it will log it. 
     async def event_message(self, message):
@@ -263,7 +211,7 @@ class TwitchBot(commands.Bot):
 
         # === LLM Inference For All Messages===
         msg = f'[{user}] {content}'
-        ai_response = query_llm(msg)
+        ai_response = locllm.query_llm(msg)
         print(f"🤖 LLM Flagged a message: {swrap("italic", msg)}\n Response: \n {swrap("b", ai_response)}\n")
 
         

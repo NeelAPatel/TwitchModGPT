@@ -5,81 +5,92 @@ import os
 import re
 
 
-DEFAULT_PROMPT = r"""You are a Twitch moderation assistant.
+# DEFAULT_PROMPT = r"""You are a Twitch moderation assistant.
 
-## Expected Input:
-"[<username>] <message>" — optionally prefixed with '[MOD] '
+# ## Expected Input:
+# "[<username>] <message>" — optionally prefixed with '[MOD] '
 
-## Task:
-1. Determine if the message violates community rules.
-2. Respond in the exact format:
-   Offensive: yes/no
-   Reason: <short reason>
-   Action: pass / timeout / ban
+# ## Task:
+# 1. Determine if the message violates community rules.
+# 2. Respond in the exact format:
+#    Offensive: yes/no
+#    Reason: <short reason>
+#    Action: pass / timeout / ban
 
-## Filters (trigger phrases or patterns):
-- Contains: "kill yourself", "unalive", "go die"
-- Regex: r"\bfat\b.*\bcow\b"
-- Regex: r"(?i)you're\s+(trash|dogwater|useless)"
-- Spam: multiple emojis in a row, or repeated messages
+# ## Filters (trigger phrases or patterns):
+# - Contains: "kill yourself", "unalive", "go die"
+# - Regex: r"\bfat\b.*\bcow\b"
+# - Regex: r"(?i)you're\s+(trash|dogwater|useless)"
+# - Spam: multiple emojis in a row, or repeated messages
 
-## If Input Does Not Match Expected Format:
-Act as a helpful assistant instead.
-"""
+# ## If Input Does Not Match Expected Format:
+# Act as a helpful assistant instead.
+# """
 
-current_prompt = ""
+# full_prompt = ""
+
+# TODO: THE TITLE/CATEGORY/CHANNEL NAME CAN BE INTEGERATED IN THIS FILE ITSELF. JUST CONFIG THE DEFAULT PROMPT BEFORE WRITING/UPDATING
 
 
-def load_system_prompt():
+base_prompt = ""
+dynamic_stream_channel = ""
+dynamic_stream_title = "" 
+dynamic_stream_category = ""
+dynamic_stream_specific_goal = "None at this time, follow default procedures"
+
+full_prompt = ""
+
+def load_base_prompt(): 
+    global base_prompt
     os.makedirs(config.LLM_LOGS_PATH, exist_ok=True)
     
     if os.path.exists(config.LLM_PROMPT_FILE):
         with open(config.LLM_PROMPT_FILE, "r", encoding="utf-8") as f:
-            current_prompt = f.read().strip()
-            # return current_prompt
+            base_prompt = f.read().strip()
     else: 
-        with open (config.LLM_PROMPT_FILE, "w", encoding="utf-8") as f: 
-            f.write(DEFAULT_PROMPT)
-            current_prompt = DEFAULT_PROMPT
-        # return current_prompt
-    return current_prompt
+        raise Exception("Failed to load Base Prompt to LLM")
 
-
-def load_filters_into_prompt(): 
-    os.makedirs(config.LLM_LOGS_PATH, exist_ok=True)
+def update_prompt_stream_context(channel: str, title: str, category: str): 
+    global dynamic_stream_channel
+    global dynamic_stream_title
+    global dynamic_stream_category
     
-    if os.path.exists(config.LLM_FILTERS_FILE):
-        with open(config.LLM_FILTERS_FILE, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    return ""
-
-def get_current_prompt():
-    return current_prompt
-
-def set_current_prompt_without_saving(text):
-    return ""
-
-def update_current_prompt_save(text): 
-    return ""
-    
-
-def append_to_prompt(append_text): 
-    global current_prompt
-    current_prompt += f'\n{append_text}'
-    with open (config.LLM_PROMPT_FILE, "a", encoding="utf-8") as f: 
-            f.write(append_text)
+    dynamic_stream_channel = channel
+    dynamic_stream_title = title
+    dynamic_stream_category = category
     
     
+def update_prompt_stream_specific_goal(goal: str): 
+    global dynamic_stream_specific_goal
+    dynamic_stream_specific_goal = goal
     
-# def append_new_filter():
 
-# def append_new_nuance(): 
+def assemble_full_prompt(): 
+    global full_prompt
     
     
+    full_prompt = (
+        f"{base_prompt}\n\n"
+        f"# === Stream Context (Dynamically Updated) ===\n"
+        f"- **Channel/Streamer**: {dynamic_stream_channel}\n"
+        f"- **Title**: {dynamic_stream_title}\n"
+        f"- **Category**: {dynamic_stream_category}\n\n"
+    )
+    
+    if dynamic_stream_specific_goal != "":
+        full_prompt += f"# === Channel-Specific Moderation Goal (Dynamic) ===\n" 
+        full_prompt += f"{dynamic_stream_specific_goal}"
+        
+    
+    return full_prompt
+
+def get_full_prompt():
+    global full_prompt
+    return full_prompt
 
 
 def query_llm(message: str) -> str:
-    prompt = load_system_prompt()
+    prompt = assemble_full_prompt()
     # prompt += f"\n Streamer: {config.CHANNEL} \n Stream Category: {category} \n Stream Title: {title}"
     full_input = f"System: {prompt}\nUser: {message}\nAssistant:"
     try:
@@ -89,3 +100,34 @@ def query_llm(message: str) -> str:
         return cleaned
     except Exception as e:
         return f"[LLM Error: {e}]"
+
+
+
+# def assemble_full_prompt():
+    
+#     return
+
+
+# def load_system_prompt():
+#     global full_prompt
+#     os.makedirs(config.LLM_LOGS_PATH, exist_ok=True)
+    
+#     if os.path.exists(config.LLM_PROMPT_FILE):
+#         with open(config.LLM_PROMPT_FILE, "r", encoding="utf-8") as f:
+#             full_prompt = f.read().strip()
+#             # return full_prompt
+#     else: 
+#         with open (config.LLM_PROMPT_FILE, "w", encoding="utf-8") as f: 
+#             f.write(DEFAULT_PROMPT)
+#             full_prompt = DEFAULT_PROMPT
+#         # return full_prompt
+#     return full_prompt
+
+
+# def load_filters_into_prompt(): 
+#     os.makedirs(config.LLM_LOGS_PATH, exist_ok=True)
+    
+#     if os.path.exists(config.LLM_FILTERS_FILE):
+#         with open(config.LLM_FILTERS_FILE, "r", encoding="utf-8") as f:
+#             return f.read().strip()
+#     return ""
