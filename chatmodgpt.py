@@ -177,14 +177,14 @@ async def validate_or_refresh_token():
                 raise Exception(f"Unexpected status code from Twitch: {resp.status}")
 
 async def main():
-    print(f"🟢 Starting Twitch Chat Moderation System for [{config.CHANNEL}]")
+    print(f"✨ Starting Twitch Chat Moderation System for [{config.CHANNEL}]")
 
-    print("Pre-Flight Twitch Token check:")
+    print("⭕ Pre-Flight Twitch Token check:")
     await validate_or_refresh_token()
     # print(f"✅ New Access Token starts with: {new_access_token[:10]}...")
     print("Pre-Flight Twitch Token check: Completed!")
     
-    print("3rd Party Emotes - Loading")
+    print("\n⭕ 3rd Party Emotes - Loading")
     config.CHANNEL_EMOTE_LIST = get_all_channel_emotes()
     config.CHANNEL_EMOTE_PATTERN = emotes_regexify(config.CHANNEL_EMOTE_LIST)
     print("3rd Party Emotes - Loaded!")
@@ -196,7 +196,7 @@ async def main():
     # print(f"First 500 chars: {config.CHANNEL_EMOTE_PATTERN.pattern[:500]}")
     # print(f"Last 500 chars: {config.CHANNEL_EMOTE_PATTERN.pattern[-500:]}")
         
-    print("Stream Info Fetch - Loading")
+    print("\n⭕ Stream Info Fetch - Loading")
     config.CHANNEL_TITLE, config.CHANNEL_CATEGORY = await fetch_stream_info(config.CHANNEL)
     print(f"✅ Stream Title: {config.CHANNEL_TITLE}")
     print(f"✅ Stream Category: {config.CHANNEL_CATEGORY}")
@@ -209,15 +209,20 @@ async def main():
     locllm.assemble_full_prompt()
     print(swrap("b", f'LLM Prompt: \n{locllm.get_full_prompt()}'))
     
-    user_query = """BAnalyze the system prompt you have been provided.
+    user_query = """Analyze the system prompt you have been provided.
+        - Summarize your overall moderation duties in your own words.
+        - Identify if there are any special focuses today based on the stream's context, such as specific game categories, collaborations, or sponsorships.
+        - Be concise but precise: 2–5 sentences max.
 
-- Summarize your overall moderation duties in your own words.
-- Identify if there are any special focuses today based on the stream's context, such as specific game categories, collaborations, or sponsorships.
-- Be concise but precise: 2–5 sentences max.
-
-Do not just repeat the prompt — explain what you are actually tasked to do today based on it."""
+        Do not just repeat the prompt — explain what you are actually tasked to do today based on it."""
     ai_response = locllm.query_llm(user_query)
-    print(swrap("y", f"👤User Query:  {user_query}") + "\n" + swrap("b", f"🤖 LLM: {ai_response}\n\n"))
+    print(swrap("g", f"👤User Query:  {user_query}") + "\n" + swrap("c", f"🤖 LLM: {ai_response}\n\n"))
+    
+    print("Twitch Bot - Loading")
+    bot = TwitchBot()
+    # bot.run()
+    await bot.start()
+    print("Twitch Bot - Loaded!")
     
 if __name__ == "__main__":
     asyncio.run(main())   
